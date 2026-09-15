@@ -1,0 +1,9 @@
+{
+  "name": "imperfect-paws-checkout",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel serverless function that turns an Imperfect Paws cart into a single Stripe Checkout Session.",
+  "dependencies": {
+    "stripe": "^17.0.0"
+  }
+}
