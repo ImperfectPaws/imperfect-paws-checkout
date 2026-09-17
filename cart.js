@@ -22,7 +22,7 @@
   'use strict';
 
   // ---- 1. CONFIG -----------------------------------------------------
-  var CHECKOUT_ENDPOINT = 'https://REPLACE-ME.vercel.app/api/create-checkout-session';
+  var CHECKOUT_ENDPOINT = 'https://imperfect-paws-checkout.vercel.app/api/create-checkout-session';
   var CART_KEY = 'ip_cart_v1';
   var MAX_QTY_PER_LINE = 10;
 
@@ -345,12 +345,66 @@
     });
   }
 
-  // ---- 6. BOOT -------------------------------------------------------
+  // ---- 6. POST-CHECKOUT HANDLING --------------------------------------
+  // Stripe redirects back to success_url / cancel_url from
+  // api/create-checkout-session.js. If the customer just paid, the cart
+  // they paid for is still sitting in localStorage — clear it and show a
+  // quick confirmation so they don't think the payment failed (and don't
+  // accidentally pay again). If they cancelled, just clean the URL and
+  // leave their cart alone so they can retry.
+  function injectBannerStyles() {
+    var style = document.createElement('style');
+    style.textContent = [
+      '#ip-order-banner{position:fixed;top:0;left:0;right:0;z-index:10001;',
+      'background:#2f6b3a;color:#fff;padding:14px 20px;text-align:center;',
+      'font-size:.92rem;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,.15);}',
+      '#ip-order-banner button{background:none;border:none;color:#fff;',
+      'opacity:.85;font-size:1.1rem;cursor:pointer;position:absolute;right:16px;',
+      'top:50%;transform:translateY(-50%);line-height:1;}'
+    ].join('');
+    document.head.appendChild(style);
+  }
+
+  function showOrderBanner(text) {
+    injectBannerStyles();
+    var banner = document.createElement('div');
+    banner.id = 'ip-order-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = escapeHtml(text) + '<button aria-label="Dismiss">×</button>';
+    banner.querySelector('button').addEventListener('click', function () {
+      banner.remove();
+    });
+    document.body.appendChild(banner);
+  }
+
+  function handleCheckoutReturn() {
+    var params = new URLSearchParams(window.location.search);
+    var status = params.get('checkout');
+    if (!status) return;
+
+    if (status === 'success') {
+      writeCart([]);
+      closeDrawer();
+      showOrderBanner("Thank you! Your order is confirmed — a receipt is on its way to your email.");
+    } else if (status === 'cancelled') {
+      showOrderBanner('Checkout was cancelled — your cart is still here whenever you\'re ready.');
+    }
+
+    // Clean the URL so refreshing the page doesn't re-trigger this.
+    params.delete('checkout');
+    params.delete('session_id');
+    var qs = params.toString();
+    var cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+
+  // ---- 7. BOOT -------------------------------------------------------
   function init() {
     injectStyles();
     buildDrawer();
     render();
     wireCards();
+    handleCheckoutReturn();
   }
 
   if (document.readyState === 'loading') {
