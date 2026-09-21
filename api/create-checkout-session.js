@@ -96,7 +96,14 @@ module.exports = async function handler(req, res) {
           currency: price.currency,
           unit_amount: price.unit_amount,
           product_data: {
-            name: li.design + ' — Size ' + li.size
+            name: li.design + ' — Size ' + li.size,
+            // Machine-readable copy of the same info, for the fulfillment
+            // webhook to read back reliably instead of parsing the display
+            // name string above.
+            metadata: {
+              design: li.design,
+              size: li.size
+            }
           }
         },
         quantity: li.quantity
