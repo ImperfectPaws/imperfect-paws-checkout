@@ -59,7 +59,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const line_items = [];
+  const pendingLineItems = [];
   for (const raw of items) {
     const design = raw && DESIGNS[raw.design];
     if (!design) {
@@ -75,21 +75,51 @@ module.exports = async function handler(req, res) {
     if (!Number.isFinite(qty) || qty < 1) qty = 1;
     qty = Math.min(MAX_QTY_PER_LINE, qty);
 
-    line_items.push({ price: priceId, quantity: qty });
+    pendingLineItems.push({ priceId: priceId, quantity: qty, design: raw.design, size: raw.size });
   }
 
   const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
   const siteOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
   try {
+    // Re-price every line from our own stored Stripe Price (never the size
+    // the browser sent), then rebuild it as an inline price_data with the
+    // SIZE folded into the product name. Referencing the pre-made `price`
+    // directly (the old approach) shows only the shared product name in the
+    // Dashboard and on receipts -- e.g. "Fiona's Ride" -- with no way to
+    // tell an XS order from a 2XL order after the fact. That is what caused
+    // an order to ship in the wrong size, so don't revert this.
+    const line_items = await Promise.all(pendingLineItems.map(async function (li) {
+      const price = await stripe.prices.retrieve(li.priceId);
+      return {
+        price_data: {
+          currency: price.currency,
+          unit_amount: price.unit_amount,
+          product_data: {
+            name: li.design + ' — Size ' + li.size
+          }
+        },
+        quantity: li.quantity
+      };
+    }));
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items,
+      // Without this, Stripe never asks the customer for a shipping
+      // address -- we only ever get their billing country. Add/remove
+      // country codes here as you expand where you're willing to ship.
+      shipping_address_collection: {
+        allowed_countries: [
+          'SI', 'AT', 'DE', 'IT', 'HR', 'HU', 'FR', 'ES', 'PT', 'NL', 'BE',
+          'LU', 'IE', 'PL', 'CZ', 'SK', 'SE', 'DK', 'FI', 'NO', 'CH', 'GB',
+          'US', 'CA', 'AU', 'NZ'
+        ]
+      },
+      phone_number_collection: { enabled: true },
       shipping_options: [{ shipping_rate: SHIPPING_RATE_ID }],
       success_url: siteOrigin + '/?checkout=success&session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: siteOrigin + '/?checkout=cancelled',
-      // billing_address_collection / shipping_address_collection can be added
-      // here if you want to restrict which countries can check out.
+      cancel_url: siteOrigin + '/?checkout=cancelled'
     });
 
     res.status(200).json({ url: session.url });
