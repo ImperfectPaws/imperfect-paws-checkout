@@ -208,5 +208,3 @@ async function placePrintfulOrder(stripe, session) {
 
     console.log('Printful order created for session ' + session.id + ':', data && data.result && data.result.id);
 }
-
-}
